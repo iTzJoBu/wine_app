@@ -3,7 +3,7 @@ import SwiftData
 import UniformTypeIdentifiers
 
 /// Einstellungen: KI-Anbieter & Schlüssel, Arten verwalten, Lagerorte,
-/// Export/Import und (bei Anthropic) die geschätzten Claude-Kosten.
+/// Export/Import (inkl. Schlüssel & Klassen) und die geschätzten Kosten.
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
@@ -43,7 +43,7 @@ struct SettingsView: View {
             Form {
                 providerSection
                 schluesselSection
-                if provider == .anthropic { kostenSection }
+                kostenSection
                 artenSection
                 lagerorteSection
                 exportImportSection
@@ -92,7 +92,7 @@ struct SettingsView: View {
 
     private var providerSection: some View {
         Section {
-            Picker("Anbieter", selection: $aiProviderRaw) {
+            Picker("Bevorzugter Anbieter", selection: $aiProviderRaw) {
                 ForEach(AIProvider.allCases) { p in
                     Text(p.anzeigeName).tag(p.rawValue)
                 }
@@ -100,55 +100,52 @@ struct SettingsView: View {
         } header: {
             Text("KI-Anbieter")
         } footer: {
-            Text("Bestimmt, welcher Dienst bei 'Mit KI nachschlagen' verwendet wird.")
+            Text("Bestimmt, welcher Dienst bei 'Mit KI nachschlagen' zuerst versucht wird. Schlägt er fehl oder ist das Kontingent erschöpft, wird automatisch auf den anderen Anbieter mit hinterlegtem Schlüssel zurückgefallen.")
         }
     }
 
-    @ViewBuilder
     private var schluesselSection: some View {
-        if provider == .gemini {
-            Section {
-                SecureField("AIza…", text: $geminiKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            } header: {
-                Text("Google-Gemini-API-Schlüssel")
-            } footer: {
-                Text("Kostenlos erhältlich unter aistudio.google.com. Wird nur lokal gespeichert und nur an Google gesendet, wenn du 'Mit KI nachschlagen' antippst.")
-            }
-        } else {
-            Section {
-                SecureField("sk-ant-…", text: $anthropicKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            } header: {
-                Text("Anthropic-(Claude-)API-Schlüssel")
-            } footer: {
-                Text("Erhältlich unter console.anthropic.com. Wird nur lokal gespeichert und nur an Anthropic gesendet, wenn du 'Mit KI nachschlagen' antippst.")
-            }
+        Section {
+            SecureField("Gemini-Schlüssel (AIza…)", text: $geminiKey)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            SecureField("Anthropic-Schlüssel (sk-ant-…)", text: $anthropicKey)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        } header: {
+            Text("API-Schlüssel")
+        } footer: {
+            Text("Gemini: kostenlos erhältlich unter aistudio.google.com. Anthropic: console.anthropic.com. Beide werden nur lokal gespeichert und nur beim Antippen von 'Mit KI nachschlagen' an den jeweiligen Dienst gesendet.")
         }
     }
 
-    // MARK: - Claude-Kosten
+    // MARK: - Kosten (beide Anbieter)
 
     private var kostenSection: some View {
         Section {
-            LabeledContent("Geschätzte Kosten gesamt", value: formatUSD(kostenGesamt))
-            LabeledContent("… letzte 28 Tage", value: formatUSD(kosten28Tage))
+            ForEach(AIProvider.allCases) { p in
+                LabeledContent(p.anzeigeName) {
+                    VStack(alignment: .trailing) {
+                        Text("7 T: \(formatUSD(kosten(provider: p, tage: 7)))")
+                        Text("28 T: \(formatUSD(kosten(provider: p, tage: 28)))")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline.monospacedDigit())
+                }
+            }
         } header: {
-            Text("Claude-Kosten (Schätzung)")
+            Text("Geschätzte API-Kosten")
         } footer: {
-            Text("Nur eine Schätzung auf Basis der verbrauchten Token und der hinterlegten Preise (\(formatUSD(ClaudePricing.inputUSDPerMillion))/Mio. Input, \(formatUSD(ClaudePricing.outputUSDPerMillion))/Mio. Output für claude-opus-4-8). Keine offizielle Abrechnung.")
+            Text("Nur Schätzungen auf Basis der verbrauchten Token und hinterlegter Preis-Konstanten je Modell (Gemini: \(formatUSD(AIPricing.geminiInputUSDPerMillion))/Mio. In · \(formatUSD(AIPricing.geminiOutputUSDPerMillion))/Mio. Out; Claude: \(formatUSD(AIPricing.claudeInputUSDPerMillion))/Mio. In · \(formatUSD(AIPricing.claudeOutputUSDPerMillion))/Mio. Out). Keine offizielle Abrechnung; tatsächliche Kosten hängen vom Tarif ab.")
         }
     }
 
-    private var kostenGesamt: Double {
-        costEvents.reduce(0) { $0 + $1.kostenUSD }
-    }
-
-    private var kosten28Tage: Double {
-        let grenze = Calendar.current.date(byAdding: .day, value: -28, to: .now) ?? .now
-        return costEvents.filter { $0.datum >= grenze }.reduce(0) { $0 + $1.kostenUSD }
+    /// Geschätzte Kosten eines Anbieters in den letzten `tage` Tagen.
+    private func kosten(provider: AIProvider, tage: Int) -> Double {
+        let grenze = Calendar.current.date(byAdding: .day, value: -tage, to: .now) ?? .now
+        return costEvents
+            .filter { $0.anbieter == provider.rawValue && $0.datum >= grenze }
+            .reduce(0) { $0 + $1.kostenUSD }
     }
 
     private func formatUSD(_ value: Double) -> String {
@@ -159,11 +156,9 @@ struct SettingsView: View {
 
     private var artenSection: some View {
         Section {
-            // Eingebaute Arten: per Schalter aktivierbar/deaktivierbar.
             ForEach(ArtStore.builtIn, id: \.self) { art in
                 Toggle(art, isOn: builtInAktivBinding(art))
             }
-            // Eigene Arten: löschbar.
             ForEach(eigeneArten, id: \.self) { art in
                 Text(art)
             }
@@ -178,7 +173,7 @@ struct SettingsView: View {
         } header: {
             Text("Arten")
         } footer: {
-            Text("Eingebaute Arten kannst du per Schalter deaktivieren (sie verschwinden dann aus der Auswahl). Eigene Arten lassen sich per Wischen löschen.")
+            Text("Eingebaute Arten kannst du per Schalter deaktivieren. Eigene Arten lassen sich per Wischen löschen. Die KI legt NIEMALS selbstständig neue Arten an.")
         }
     }
 
@@ -186,7 +181,6 @@ struct SettingsView: View {
         ArtStore.parse(customArten).filter { !ArtStore.builtIn.contains($0) }
     }
 
-    /// Bindung für den Aktiv-Schalter einer eingebauten Art.
     private func builtInAktivBinding(_ art: String) -> Binding<Bool> {
         Binding(
             get: { !ArtStore.parse(deaktivierteArten).contains(art) },
@@ -248,12 +242,19 @@ struct SettingsView: View {
         } header: {
             Text("Daten sichern")
         } footer: {
-            Text("Export erzeugt eine JSON-Datei mit allen Produkten, Lagerorten, Beständen und Anzeigebildern. Beim Import werden die Daten zusammengeführt: Ein Produkt gilt nur bei gleicher EAN oder gleicher Sorte + Winzer + Jahrgang als identisch, und ein bereits vorhandener Bestand (gleicher Lagerort, gleiche Anzahl) wird nicht doppelt gebucht.")
+            Text("Export erzeugt EINE JSON-Datei mit allen Getränken (inkl. Anzeigebild), Lagerorten, eigenen Klassen und den API-Schlüsseln. Die Datei trägt eine Schema-Version; auch ältere Backups lassen sich weiterhin importieren. Beim Import werden die Daten zusammengeführt, ohne Bestände doppelt zu zählen.")
         }
     }
 
     private func exportieren() {
-        let backup = BackupService.makeBackup(products: products, locations: locations)
+        let einstellungen = SettingsDTO(
+            aiProvider: aiProviderRaw,
+            geminiAPIKey: geminiKey,
+            anthropicAPIKey: anthropicKey,
+            customArten: customArten,
+            deaktivierteArten: deaktivierteArten
+        )
+        let backup = BackupService.makeBackup(products: products, locations: locations, einstellungen: einstellungen)
         do {
             let data = try BackupService.encode(backup)
             exportDocument = BackupDocument(data: data)
@@ -273,10 +274,14 @@ struct SettingsView: View {
             do {
                 let data = try Data(contentsOf: url)
                 let backup = try BackupService.decode(data)
-                BackupService.merge(backup, into: context, existingProducts: products, existingLocations: locations)
-                meldung = "Import erfolgreich: \(backup.products.count) Produkte und \(backup.locations.count) Lagerorte verarbeitet."
+                let summary = BackupService.merge(backup, into: context, existingProducts: products, existingLocations: locations)
+                var text = "Import erfolgreich: \(summary.produkte) Getränke, \(summary.lagerorte) Lagerorte, \(summary.klassen) neue Klassen."
+                if summary.neuereVersionHinweis {
+                    text += "\n\nHinweis: Die Datei stammt aus einer neueren App-Version. Es wurde so viel wie möglich übernommen – aktualisiere die App für volle Kompatibilität."
+                }
+                meldung = text
             } catch {
-                meldung = "Import fehlgeschlagen: \(error.localizedDescription)"
+                meldung = "Import fehlgeschlagen: Die Datei konnte nicht gelesen werden (\(error.localizedDescription))."
             }
         }
     }

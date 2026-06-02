@@ -3,8 +3,8 @@
 Eine App, mit der du deinen kompletten Getränkebestand (Wein, Sekt, Champagner,
 Prosecco …) verwaltest: Du fotografierst das Etikett, die App liest **Sorte,
 Winzer und Jahrgang** automatisch aus, erkennt **Barcodes**, du buchst den
-Bestand **flaschen- oder kartonweise** auf beliebig viele **Lagerorte** – und
-behältst über eine durchsuchbare, filterbare Übersicht den Überblick. Alles
+Bestand **flaschenweise** auf beliebig viele **Lagerorte** – und behältst über
+eine durchsuchbare, nach Lagerort gruppierte Übersicht den Überblick. Alles
 bleibt **lokal auf deinem iPhone**.
 
 > **Wichtig:** iPhone-Apps lassen sich nur auf einem **Mac mit Xcode** bauen
@@ -28,34 +28,51 @@ bleibt **lokal auf deinem iPhone**.
   Du kannst dann **zusammenführen** (Bestand hinzubuchen) oder ein **neues
   Produkt** anlegen. *Verschiedene Jahrgänge gelten bewusst als verschiedene
   Produkte.*
-- ✨ **Optionale KI-Erkennung**, umschaltbar zwischen **Google Gemini
-  (kostenlos)** und **Anthropic Claude** – füllt Winzer, Sorte, Jahrgang, Farbe
-  und Art automatisch aus. Verfügbar, sobald **2 Fotos** (Vorder- und Rückseite)
-  vorliegen; gesendet wird **ausschließlich die Rückseite** (dort stehen meist
-  die Details). Vor der Aufnahme wird ausdrücklich darauf hingewiesen.
+- ✨ **Optionale KI-Erkennung** – primär **Google Gemini** (Modell
+  `gemini-3.1-flash-lite`, mit Fallback auf das Preview-Modell), bei Fehler oder
+  erschöpftem Kontingent automatischer **Rückfall** auf den anderen Anbieter mit
+  hinterlegtem Schlüssel (**Anthropic Claude**). Die KI füllt **Sorte, Winzer,
+  Jahrgang, Farbe, Art und Verschluss** aus. In den Einstellungen wählst du den
+  **bevorzugten** Anbieter; gesendet wird das aufgenommene Foto, das danach
+  **verworfen** wird. **Wichtig:** Die KI legt **niemals selbstständig neue
+  Arten/Klassen** an – „Art" wird nur einem bereits vorhandenen Wert zugeordnet.
 - 🎨 **Zwei getrennte Kategorien:** **Farbe** (rot/weiß/rosé) und **Art**
   (Sekt/Champagner/Prosecco/Wein …). In der Übersicht ist die Art-Markierung in
-  der **jeweiligen Weinfarbe** hinterlegt. Arten lassen sich in den Einstellungen
-  über einen Button **hinzufügen**, eigene wieder löschen und eingebaute per
-  Schalter **deaktivieren**. Dazu ein Schalter **„alkoholfrei"**.
-- 📦 **Flaschen & Kartons kombiniert:** Beim Buchen Einheit wählen (Flasche oder
-  Karton), „Flaschen pro Karton" pro Produkt einstellbar (Standard 6).
+  der **jeweiligen Weinfarbe** hinterlegt (rot Richtung **Bordeaux**, rosé in
+  hellerem **Rosa**). Arten lassen sich in den Einstellungen **hinzufügen**,
+  eigene wieder löschen und eingebaute per Schalter **deaktivieren**. Dazu ein
+  Schalter **„alkoholfrei"** sowie ein Feld **„Verschluss"** (Korken /
+  Schraubverschluss / Kronkorken / keine Angabe).
+- 🍾 **Bestand rein flaschenweise:** Jeder Lagerort führt schlicht die **Anzahl
+  Flaschen** – keine Karton-Logik mehr.
 - 📍 **Mehrere Lagerorte pro Produkt:** Ein Produkt kann an mehreren Orten liegen.
-  Lagerorte mit **optionaler Kapazität** anlegen (per Ziffernblock eingebbar),
-  Belegung sehen („12 / 24" bzw. nur die Anzahl ohne Limit), Überbelegung wird
-  **rot** hervorgehoben.
-- 🔁 **Verschieben:** Menge + Einheit von einem Lagerort zu einem anderen umbuchen.
-- 🔍 **Übersicht mit Filtern** (Farbe, Art, alkoholfrei, Lagerort – kombinierbar),
-  **Suche**, Umschalter **„Nach Lagerort gruppieren"** und **Gesamtsummen**.
-- 💾 **Export & Import:** In den Einstellungen den kompletten Bestand als
-  JSON-Datei (inkl. Bilder) **sichern** und wieder **importieren** (Import führt
-  zusammen und erkennt Duplikate).
-- 💶 **Claude-Kostenschätzung:** Bei Anbieter „Anthropic" wird der Tokenverbrauch
-  ausgelesen und lokal in eine grobe USD-Schätzung umgerechnet (gesamt & letzte
-  28 Tage).
+  Lagerorte mit **optionaler Kapazität** anlegen, Belegung sehen („12 / 24" bzw.
+  nur die Anzahl ohne Limit), Überbelegung wird **rot** hervorgehoben. Produkte
+  lassen sich auch **ganz ohne Lagerort** speichern.
+- 🔁 **Verschieben & Entnehmen:** Flaschen von einem Lagerort zu einem anderen
+  umbuchen – oder dem Bestand als **Verbrauch entnehmen**.
+- ⭐ **Notizen, Favoriten & „Beliebt bei:":** Freies Notizfeld, Produkte als
+  **Favorit** markieren (in der Übersicht danach filterbar) und ein Feld
+  **„Beliebt bei:"** (Namen mit Komma getrennt), das in der Übersicht
+  **durchsuchbar** ist.
+- 🔍 **Übersicht immer nach Lagerort gruppiert** (Produkte ohne Lagerort in einer
+  eigenen Gruppe „Ohne Lagerort"), mit **Suche**, **Gesamtsummen** und
+  **ein-/ausklappbaren Filterkategorien** (Farbe, Art, alkoholfrei, Favoriten,
+  Lagerort).
+- 💾 **Export & Import (versioniert & abwärtskompatibel):** Eine **JSON-Datei**
+  mit **allen** Daten – Getränke (inkl. Bilder & aller Felder), eigene
+  Klassen/Arten, Lagerorte **und** die hinterlegten API-Schlüssel. Die Datei
+  trägt eine `schemaVersion`; ältere Backups werden über Migrationsstufen
+  weiterhin korrekt eingelesen, fehlende/unbekannte Felder führen nie zum
+  Absturz. Nach dem Import erscheint eine Rückmeldung (Anzahl Getränke,
+  Lagerorte, neue Klassen).
+- 💶 **Kostenschätzung für beide Anbieter:** Token-Verbrauch (bei Gemini aus
+  `usageMetadata`, bei Claude aus `usage`) wird je Anbieter über anpassbare
+  Preis-Konstanten in eine grobe **USD-Schätzung** umgerechnet und für die
+  **letzten 7 und 28 Tage** angezeigt – klar als Schätzung gekennzeichnet.
 - 💾 Alles wird **lokal auf dem iPhone** gespeichert (SwiftData), keine Cloud,
-  kein Konto nötig. Die **Rückseiten-Fotos** für die KI werden nur ausgewertet
-  und danach wieder **verworfen** – nur die gewonnenen Daten bleiben.
+  kein Konto nötig. Die **Analyse-Fotos** für die KI werden nur ausgewertet und
+  danach wieder **verworfen** – nur die gewonnenen Daten bleiben.
 
 ---
 

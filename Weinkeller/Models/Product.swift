@@ -19,11 +19,18 @@ final class Product {
     var art: String
     /// Alkoholfrei ja/nein.
     var alkoholfrei: Bool
+    /// Verschlussart – intern als Rohwert gespeichert.
+    var verschlussRaw: String
 
-    /// EAN-/Barcode der Einzelflasche.
+    /// EAN-/Barcode der Flasche.
     var ean: String
-    /// Anzahl Flaschen pro Karton (Standard 6).
-    var flaschenProKarton: Int
+
+    /// Manuelle Notiz (frei).
+    var notiz: String
+    /// Als Favorit markiert.
+    var favorit: Bool
+    /// "Beliebt bei:" – Namen, mehrere mit Komma getrennt. Durchsuchbar.
+    var beliebtBei: String
 
     /// Genau EIN Anzeigebild pro Produkt (JPEG, ausgelagert gespeichert).
     @Attribute(.externalStorage) var anzeigebildData: Data?
@@ -48,9 +55,15 @@ final class Product {
         set { farbeRaw = newValue.rawValue }
     }
 
+    /// Komfort-Zugriff auf den Verschluss als Aufzählung.
+    var verschluss: ClosureType {
+        get { ClosureType(rawValue: verschlussRaw) ?? .keine }
+        set { verschlussRaw = newValue.rawValue }
+    }
+
     /// Gesamtzahl aller Flaschen dieses Produkts über alle Lagerorte.
     var gesamtflaschen: Int {
-        stockEntries.reduce(0) { $0 + $1.gesamtflaschen }
+        stockEntries.reduce(0) { $0 + $1.anzahl }
     }
 
     init(
@@ -60,8 +73,11 @@ final class Product {
         farbe: WineColor = .keine,
         art: String = "Wein",
         alkoholfrei: Bool = false,
+        verschluss: ClosureType = .keine,
         ean: String = "",
-        flaschenProKarton: Int = 6,
+        notiz: String = "",
+        favorit: Bool = false,
+        beliebtBei: String = "",
         anzeigebildData: Data? = nil,
         erkannterText: String = "",
         erkannteBarcodes: [String] = [],
@@ -73,8 +89,11 @@ final class Product {
         self.farbeRaw = farbe.rawValue
         self.art = art
         self.alkoholfrei = alkoholfrei
+        self.verschlussRaw = verschluss.rawValue
         self.ean = ean
-        self.flaschenProKarton = flaschenProKarton
+        self.notiz = notiz
+        self.favorit = favorit
+        self.beliebtBei = beliebtBei
         self.anzeigebildData = anzeigebildData
         self.erkannterText = erkannterText
         self.erkannteBarcodes = erkannteBarcodes

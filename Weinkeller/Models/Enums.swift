@@ -14,23 +14,48 @@ enum WineColor: String, Codable, CaseIterable, Identifiable {
     /// Anzeigefarbe für kleine Punkte/Markierungen in der Liste.
     var swatch: Color {
         switch self {
-        case .rot: return .red
+        // Dunkles Bordeaux statt knalligem Rot.
+        case .rot: return Color(red: 0.40, green: 0.07, blue: 0.13)
         case .weiss: return Color(red: 0.85, green: 0.8, blue: 0.4)
-        case .rose: return .pink
+        // Helleres, kräftigeres Rosa.
+        case .rose: return Color(red: 0.97, green: 0.72, blue: 0.80)
         case .keine: return .secondary
         }
     }
+
+    /// Ordnet einen KI-/Freitextwert einer Farbe zu (nil = unbekannt/leer).
+    static func fromAI(_ raw: String) -> WineColor? {
+        let n = raw.lowercased()
+        if n.isEmpty { return nil }
+        if n.contains("rot") || n.contains("red") { return .rot }
+        if n.contains("weiß") || n.contains("weiss") || n.contains("white") { return .weiss }
+        if n.contains("rosé") || n.contains("rose") || n.contains("pink") { return .rose }
+        return nil
+    }
 }
 
-/// Einheit beim Buchen/Verschieben von Beständen.
-enum StockUnit: String, CaseIterable, Identifiable {
-    case flasche = "Flasche"
-    case karton = "Karton"
+/// Verschlussart einer Flasche. Wird – falls möglich – von der KI miterkannt.
+enum ClosureType: String, Codable, CaseIterable, Identifiable {
+    case korken = "Korken"
+    case schraubverschluss = "Schraubverschluss"
+    case kronkorken = "Kronkorken"
+    case keine = "keine Angabe"
 
     var id: String { rawValue }
+
+    /// Ordnet einen KI-/Freitextwert einer Verschlussart zu (nil = unbekannt/leer).
+    static func fromAI(_ raw: String) -> ClosureType? {
+        let n = raw.lowercased()
+        if n.isEmpty { return nil }
+        if n.contains("schraub") || n.contains("screw") { return .schraubverschluss }
+        if n.contains("kron") || n.contains("crown") { return .kronkorken }
+        if n.contains("kork") || n.contains("cork") { return .korken }
+        return nil
+    }
 }
 
-/// Wählbarer KI-Anbieter.
+/// Wählbarer KI-Anbieter (bestimmt die bevorzugte Reihenfolge; bei Fehlern wird
+/// automatisch auf den jeweils anderen Anbieter mit hinterlegtem Schlüssel zurückgefallen).
 enum AIProvider: String, CaseIterable, Identifiable {
     case gemini = "gemini"
     case anthropic = "anthropic"
@@ -39,7 +64,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
 
     var anzeigeName: String {
         switch self {
-        case .gemini: return "Google Gemini (kostenlos)"
+        case .gemini: return "Google Gemini"
         case .anthropic: return "Anthropic Claude"
         }
     }
@@ -77,6 +102,15 @@ enum ArtStore {
         list.map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
+    }
+
+    /// Ordnet einen KI-/Freitextwert einer BEREITS VORHANDENEN Art zu.
+    /// Liefert nil, wenn keine passende Art existiert – es werden NIEMALS
+    /// selbstständig neue Arten/Klassen angelegt.
+    static func match(_ raw: String, in arten: [String]) -> String? {
+        let n = raw.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return nil }
+        return arten.first { $0.caseInsensitiveCompare(n) == .orderedSame }
     }
 }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// Detailansicht eines Produkts – Felder bearbeitbar, Bestand je Lagerort sichtbar.
+/// Detailansicht eines Produkts – alle Felder bearbeitbar, Bestand je Lagerort sichtbar.
 struct ProductDetailView: View {
     @Bindable var product: Product
     @Environment(\.modelContext) private var context
@@ -10,10 +10,10 @@ struct ProductDetailView: View {
     @AppStorage(SettingsKey.deaktivierteArten) private var deaktivierteArten = ""
 
     @State private var showCamera = false            // Anzeigebild ersetzen
-    @State private var showCameraRueckseite = false  // Rückseite für KI
-    @State private var zeigeRueckseiteHinweis = false
+    @State private var showCameraAnalyse = false     // Analyse-Foto für KI
     @State private var showBook = false
     @State private var showMove = false
+    @State private var showConsume = false
     @State private var aiRunning = false
     @State private var aiError: String?
 
@@ -36,8 +36,10 @@ struct ProductDetailView: View {
             bildSection
             bestandSection
             getraenkSection
-            kartonSection
+            eanSection
             kiSection
+            notizSection
+            beliebtBeiSection
             loeschenSection
         }
         .navigationTitle(product.sorte.isEmpty ? "Getränk" : product.sorte)
@@ -49,21 +51,16 @@ struct ProductDetailView: View {
             }
             .ignoresSafeArea()
         }
-        .fullScreenCover(isPresented: $showCameraRueckseite) {
+        .fullScreenCover(isPresented: $showCameraAnalyse) {
             CameraPicker { captured in
-                // Rückseite: nur für die KI, wird nicht gespeichert.
+                // Analyse-Foto: nur für die KI, wird nicht gespeichert.
                 Task { await runAI(on: captured) }
             }
             .ignoresSafeArea()
         }
-        .alert("Rückseite fotografieren", isPresented: $zeigeRueckseiteHinweis) {
-            Button("Kamera öffnen") { showCameraRueckseite = true }
-            Button("Abbrechen", role: .cancel) {}
-        } message: {
-            Text("Bitte fotografiere jetzt die RÜCKSEITE des Etiketts. Dort stehen meist die Details, die die KI auswertet. Dieses Foto wird nur analysiert und danach wieder verworfen.")
-        }
         .sheet(isPresented: $showBook) { BookStockSheet(product: product) }
         .sheet(isPresented: $showMove) { MoveStockSheet(product: product) }
+        .sheet(isPresented: $showConsume) { ConsumeStockSheet(product: product) }
     }
 
     // MARK: - Sections
@@ -94,16 +91,14 @@ struct ProductDetailView: View {
                         Spacer()
                         Text(eintrag.beschreibung)
                             .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
                     }
                 }
             }
-            HStack {
-                Button { showBook = true } label: { Label("Bestand buchen", systemImage: "plus.circle") }
-                Spacer()
-                Button { showMove = true } label: { Label("Verschieben", systemImage: "arrow.left.arrow.right") }
-                    .disabled(bestandEintraege.isEmpty)
-            }
+            Button { showBook = true } label: { Label("Bestand buchen", systemImage: "plus.circle") }
+            Button { showMove = true } label: { Label("Verschieben", systemImage: "arrow.left.arrow.right") }
+                .disabled(bestandEintraege.isEmpty)
+            Button { showConsume = true } label: { Label("Entnehmen (Verbrauch)", systemImage: "minus.circle") }
+                .disabled(bestandEintraege.isEmpty)
         } header: {
             Text("Bestand je Lagerort")
         } footer: {
@@ -122,28 +117,32 @@ struct ProductDetailView: View {
             Picker("Art", selection: $product.art) {
                 ForEach(arten, id: \.self) { Text($0).tag($0) }
             }
+            Picker("Verschluss", selection: $product.verschluss) {
+                ForEach(ClosureType.allCases) { Text($0.rawValue).tag($0) }
+            }
             Toggle("Alkoholfrei", isOn: $product.alkoholfrei)
+            Toggle(isOn: $product.favorit) {
+                Label("Favorit", systemImage: product.favorit ? "star.fill" : "star")
+            }
         }
     }
 
-    private var kartonSection: some View {
-        Section("Barcode & Karton") {
+    private var eanSection: some View {
+        Section("Barcode") {
             LabeledField("EAN", text: $product.ean)
-            Stepper(value: $product.flaschenProKarton, in: 1...100) {
-                Text("Flaschen pro Karton: \(product.flaschenProKarton)")
-            }
         }
     }
 
     private var kiSection: some View {
         Section {
             Button {
-                zeigeRueckseiteHinweis = true
+                // Kein Popup – direkt die Kamera für das Analyse-Foto öffnen.
+                showCameraAnalyse = true
             } label: {
                 if aiRunning {
-                    HStack { ProgressView(); Text("KI analysiert die Rückseite …") }
+                    HStack { ProgressView(); Text("KI analysiert das Foto …") }
                 } else {
-                    Label("Mit KI nachschlagen (Rückseite)", systemImage: "sparkles")
+                    Label("Mit KI nachschlagen (Foto)", systemImage: "sparkles")
                 }
             }
             .disabled(aiRunning)
@@ -151,7 +150,23 @@ struct ProductDetailView: View {
                 Text(aiError).font(.footnote).foregroundStyle(.red)
             }
         } footer: {
-            Text("Fotografiere die Rückseite des Etiketts; sie wird an den in den Einstellungen gewählten KI-Anbieter gesendet und danach verworfen.")
+            Text("Fotografiere das Etikett; es wird an den bevorzugten KI-Anbieter gesendet (mit automatischem Fallback) und danach verworfen.")
+        }
+    }
+
+    private var notizSection: some View {
+        Section("Notiz") {
+            TextField("Notiz", text: $product.notiz, axis: .vertical)
+        }
+    }
+
+    private var beliebtBeiSection: some View {
+        Section {
+            TextField("Namen, mehrere mit Komma trennen", text: $product.beliebtBei)
+        } header: {
+            Text("Beliebt bei:")
+        } footer: {
+            Text("Diese Namen lassen sich in der Übersicht durchsuchen.")
         }
     }
 
@@ -178,7 +193,6 @@ struct ProductDetailView: View {
     }
 
     private func runAI(on image: UIImage) async {
-        // Erkennungsdaten aus der Rückseite ebenfalls für die Wiedererkennung übernehmen.
         await aktualisiereErkennung(image)
         aiRunning = true
         aiError = nil
@@ -188,24 +202,18 @@ struct ProductDetailView: View {
             if let v = s.winzer, !v.isEmpty { product.winzer = v }
             if let v = s.sorte, !v.isEmpty { product.sorte = v }
             if let v = s.jahrgang, !v.isEmpty { product.jahrgang = v }
-            if let v = s.farbe, let f = matchFarbe(v) { product.farbe = f }
-            if let v = s.art, !v.isEmpty { product.art = v }
+            if let v = s.farbe, let f = WineColor.fromAI(v) { product.farbe = f }
+            // Art NUR setzen, wenn sie einer vorhandenen Klasse entspricht.
+            if let v = s.art, let a = ArtStore.match(v, in: arten) { product.art = a }
+            if let v = s.verschluss, let c = ClosureType.fromAI(v) { product.verschluss = c }
             if let inT = result.inputTokens, let outT = result.outputTokens {
-                let kosten = ClaudePricing.estimate(inputTokens: inT, outputTokens: outT)
-                context.insert(CostEvent(inputTokens: inT, outputTokens: outT, kostenUSD: kosten))
+                let kosten = AIPricing.estimate(provider: result.provider, inputTokens: inT, outputTokens: outT)
+                context.insert(CostEvent(anbieter: result.provider.rawValue, inputTokens: inT, outputTokens: outT, kostenUSD: kosten))
             }
         } catch {
             aiError = error.localizedDescription
         }
         aiRunning = false
-    }
-
-    private func matchFarbe(_ raw: String) -> WineColor? {
-        let n = raw.lowercased()
-        if n.contains("rot") || n.contains("red") { return .rot }
-        if n.contains("weiß") || n.contains("weiss") || n.contains("white") { return .weiss }
-        if n.contains("rosé") || n.contains("rose") { return .rose }
-        return nil
     }
 }
 

@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 
 /// Bündelt die Buchungslogik für Bestände, damit Views einfach bleiben.
+/// Bestand wird ausschließlich in einzelnen Flaschen geführt.
 enum StockService {
 
     /// Sucht den vorhandenen `StockEntry` eines Produkts an einem Lagerort.
@@ -9,13 +10,12 @@ enum StockService {
         product.stockEntries.first { $0.location?.persistentModelID == location.persistentModelID }
     }
 
-    /// Bucht Menge in einer Einheit (Flasche/Karton) auf einen Lagerort.
+    /// Bucht eine Anzahl Flaschen auf einen Lagerort.
     @discardableResult
     static func book(
         product: Product,
         location: Location,
-        unit: StockUnit,
-        menge: Int,
+        anzahl: Int,
         context: ModelContext
     ) -> StockEntry {
         let target: StockEntry
@@ -28,39 +28,42 @@ enum StockService {
             context.insert(neu)
             target = neu
         }
-        switch unit {
-        case .flasche: target.einzelflaschen += max(0, menge)
-        case .karton: target.kartons += max(0, menge)
-        }
+        target.anzahl += max(0, anzahl)
         return target
     }
 
-    /// Verschiebt Menge in einer Einheit von einem Lagerort zu einem anderen.
-    /// Bestände werden angepasst, leere Einträge danach entfernt.
+    /// Verschiebt eine Anzahl Flaschen von einem Lagerort zu einem anderen.
     static func move(
         product: Product,
         from quelle: Location,
         to ziel: Location,
-        unit: StockUnit,
-        menge: Int,
+        anzahl: Int,
         context: ModelContext
     ) {
-        guard quelle.persistentModelID != ziel.persistentModelID, menge > 0 else { return }
+        guard quelle.persistentModelID != ziel.persistentModelID, anzahl > 0 else { return }
         guard let quellEintrag = entry(for: product, at: quelle) else { return }
 
-        let bewegt: Int
-        switch unit {
-        case .flasche:
-            bewegt = min(menge, quellEintrag.einzelflaschen)
-            quellEintrag.einzelflaschen -= bewegt
-        case .karton:
-            bewegt = min(menge, quellEintrag.kartons)
-            quellEintrag.kartons -= bewegt
-        }
+        let bewegt = min(anzahl, quellEintrag.anzahl)
         guard bewegt > 0 else { return }
+        quellEintrag.anzahl -= bewegt
 
-        book(product: product, location: ziel, unit: unit, menge: bewegt, context: context)
+        book(product: product, location: ziel, anzahl: bewegt, context: context)
         cleanupIfEmpty(quellEintrag, context: context)
+    }
+
+    /// Entnimmt (verbraucht) eine Anzahl Flaschen aus einem Lagerort.
+    /// Der Bestand sinkt entsprechend; leere Einträge werden entfernt.
+    static func consume(
+        product: Product,
+        at location: Location,
+        anzahl: Int,
+        context: ModelContext
+    ) {
+        guard anzahl > 0, let eintrag = entry(for: product, at: location) else { return }
+        let entnommen = min(anzahl, eintrag.anzahl)
+        guard entnommen > 0 else { return }
+        eintrag.anzahl -= entnommen
+        cleanupIfEmpty(eintrag, context: context)
     }
 
     /// Entfernt einen StockEntry, wenn er keinen Bestand mehr enthält.

@@ -1,8 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// Startbildschirm: durchsuchbare Übersicht aller Getränke mit Filtern,
-/// optionaler Gruppierung nach Lagerort und Gesamtsumme.
+/// Startbildschirm: durchsuchbare Übersicht aller Getränke, IMMER nach Lagerort
+/// gruppiert (inkl. einer Gruppe „Ohne Lagerort"), mit ein-/ausklappbaren Filtern.
 struct ProductListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Product.dateAdded, order: .reverse) private var products: [Product]
@@ -12,14 +12,15 @@ struct ProductListView: View {
 
     @State private var showAdd = false
     @State private var showSettings = false
+    @State private var showFilter = false
     @State private var search = ""
 
     // Filter
     @State private var selectedFarbe: WineColor?
     @State private var selectedArt: String?
     @State private var nurAlkoholfrei = false
+    @State private var nurFavoriten = false
     @State private var selectedLocation: Location?
-    @State private var gruppieren = false
 
     private var arten: [String] { ArtStore.effective(custom: customArten, deaktiviert: deaktivierteArten) }
 
@@ -28,25 +29,38 @@ struct ProductListView: View {
             Group {
                 if products.isEmpty {
                     leererZustand
-                } else if gruppieren {
-                    gruppierteListe
                 } else {
-                    flacheListe
+                    gruppierteListe
                 }
             }
             .navigationTitle("Weinkeller")
-            .searchable(text: $search, prompt: "Suche Sorte, Winzer, Jahrgang, Lagerort")
+            .searchable(text: $search, prompt: "Suche Sorte, Winzer, Jahrgang, Lagerort, beliebt bei")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
-                ToolbarItem(placement: .topBarTrailing) { filterMenu }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showFilter = true } label: {
+                        Image(systemName: filterAktiv ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showAdd = true } label: { Image(systemName: "plus") }
                 }
             }
             .sheet(isPresented: $showAdd) { AddProductView() }
             .sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(isPresented: $showFilter) {
+                FilterSheet(
+                    selectedFarbe: $selectedFarbe,
+                    selectedArt: $selectedArt,
+                    nurAlkoholfrei: $nurAlkoholfrei,
+                    nurFavoriten: $nurFavoriten,
+                    selectedLocation: $selectedLocation,
+                    arten: arten,
+                    locations: locations
+                )
+            }
         }
     }
 
@@ -60,103 +74,50 @@ struct ProductListView: View {
         }
     }
 
-    // MARK: - Flache Liste
-
-    private var flacheListe: some View {
-        List {
-            Section {
-                ForEach(filteredProducts) { product in
-                    NavigationLink {
-                        ProductDetailView(product: product)
-                    } label: {
-                        ProductRow(product: product, count: anzeigeAnzahl(product))
-                    }
-                }
-                .onDelete(perform: delete)
-            } footer: {
-                Text("\(filteredProducts.count) Produkte · \(gesamtFlach) Flaschen gesamt")
-            }
-        }
-    }
-
     // MARK: - Gruppierte Liste
 
     private var gruppierteListe: some View {
         List {
-            ForEach(gruppen, id: \.0.persistentModelID) { (loc, eintraege) in
+            ForEach(gruppen, id: \.id) { gruppe in
                 Section {
-                    ForEach(eintraege, id: \.0.persistentModelID) { (product, entry) in
+                    ForEach(gruppe.eintraege, id: \.0.persistentModelID) { (product, count) in
                         NavigationLink {
                             ProductDetailView(product: product)
                         } label: {
-                            ProductRow(product: product, count: entry.gesamtflaschen)
+                            ProductRow(product: product, count: count)
                         }
                     }
                 } header: {
                     HStack {
-                        Text(loc.name)
+                        Text(gruppe.titel)
                         Spacer()
-                        Text(loc.belegungsText)
-                            .foregroundStyle(loc.istUeberbelegt ? .red : .secondary)
+                        if let loc = gruppe.location {
+                            Text(loc.belegungsText)
+                                .foregroundStyle(loc.istUeberbelegt ? .red : .secondary)
+                        }
                     }
                 }
             }
             Section {
                 EmptyView()
             } footer: {
-                Text("\(gesamtGruppiert) Flaschen in der aktuellen Ansicht")
+                Text("\(gesamtAnzahl) Flaschen in der aktuellen Ansicht")
             }
-        }
-    }
-
-    private var filterMenu: some View {
-        Menu {
-            Picker("Farbe", selection: $selectedFarbe) {
-                Text("Alle Farben").tag(WineColor?.none)
-                ForEach(WineColor.allCases) { Text($0.rawValue).tag(WineColor?.some($0)) }
-            }
-            Picker("Art", selection: $selectedArt) {
-                Text("Alle Arten").tag(String?.none)
-                ForEach(arten, id: \.self) { Text($0).tag(String?.some($0)) }
-            }
-            if !locations.isEmpty {
-                Picker("Lagerort", selection: $selectedLocation) {
-                    Text("Alle Lagerorte").tag(Location?.none)
-                    ForEach(locations) { Text($0.name).tag(Location?.some($0)) }
-                }
-            }
-            Toggle("Nur alkoholfrei", isOn: $nurAlkoholfrei)
-            Divider()
-            Toggle("Nach Lagerort gruppieren", isOn: $gruppieren)
-            if filterAktiv {
-                Divider()
-                Button(role: .destructive) { filterZuruecksetzen() } label: {
-                    Label("Filter zurücksetzen", systemImage: "xmark.circle")
-                }
-            }
-        } label: {
-            Image(systemName: filterAktiv ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
         }
     }
 
     // MARK: - Filterlogik
 
     private var filterAktiv: Bool {
-        selectedFarbe != nil || selectedArt != nil || nurAlkoholfrei || selectedLocation != nil
+        selectedFarbe != nil || selectedArt != nil || nurAlkoholfrei || nurFavoriten || selectedLocation != nil
     }
 
-    private func filterZuruecksetzen() {
-        selectedFarbe = nil
-        selectedArt = nil
-        nurAlkoholfrei = false
-        selectedLocation = nil
-    }
-
-    /// Prüft Farbe/Art/alkoholfrei/Suche – optional auch den Lagerort-Filter.
+    /// Prüft Farbe/Art/alkoholfrei/Favoriten/Suche – optional auch den Lagerort-Filter.
     private func matches(_ p: Product, applyLocation: Bool) -> Bool {
         if let f = selectedFarbe, p.farbe != f { return false }
         if let a = selectedArt, p.art != a { return false }
         if nurAlkoholfrei, !p.alkoholfrei { return false }
+        if nurFavoriten, !p.favorit { return false }
         if applyLocation, let loc = selectedLocation {
             let hatDort = p.stockEntries.contains {
                 $0.location?.persistentModelID == loc.persistentModelID && !$0.istLeer
@@ -170,57 +131,182 @@ struct ProductListView: View {
                 || p.winzer.lowercased().contains(q)
                 || p.jahrgang.lowercased().contains(q)
                 || p.art.lowercased().contains(q)
+                || p.beliebtBei.lowercased().contains(q)
                 || inLagerort
             if !treffer { return false }
         }
         return true
     }
 
-    private var filteredProducts: [Product] {
-        products.filter { matches($0, applyLocation: true) }
+    /// Eine Gruppe der Übersicht (Lagerort oder „Ohne Lagerort").
+    private struct Gruppe {
+        let id: String
+        let titel: String
+        let location: Location?
+        let eintraege: [(Product, Int)]
     }
 
-    /// Anzahl, die in der flachen Liste pro Produkt angezeigt wird.
-    /// Mit Lagerort-Filter nur die Flaschen dort, sonst die Gesamtzahl.
-    private func anzeigeAnzahl(_ p: Product) -> Int {
-        if let loc = selectedLocation {
-            return p.stockEntries
-                .filter { $0.location?.persistentModelID == loc.persistentModelID }
-                .reduce(0) { $0 + $1.gesamtflaschen }
-        }
-        return p.gesamtflaschen
-    }
+    /// Baut die nach Lagerort gruppierten Daten auf. Produkte ohne Bestand landen
+    /// in der Gruppe „Ohne Lagerort" (nur wenn kein Lagerort-Filter aktiv ist).
+    private var gruppen: [Gruppe] {
+        var result: [Gruppe] = []
 
-    private var gesamtFlach: Int {
-        filteredProducts.reduce(0) { $0 + anzeigeAnzahl($1) }
-    }
-
-    /// Gruppierte Daten: je Lagerort die passenden Produkte mit ihrem dortigen Eintrag.
-    private var gruppen: [(Location, [(Product, StockEntry)])] {
         let zuZeigen = selectedLocation.map { [$0] } ?? locations
-        return zuZeigen.compactMap { loc in
-            let eintraege: [(Product, StockEntry)] = loc.stockEntries
+        for loc in zuZeigen {
+            let eintraege: [(Product, Int)] = loc.stockEntries
                 .filter { !$0.istLeer }
-                .compactMap { entry in
+                .compactMap { entry -> (Product, Int)? in
                     guard let p = entry.product, matches(p, applyLocation: false) else { return nil }
-                    return (p, entry)
+                    return (p, entry.anzahl)
                 }
                 .sorted { $0.0.sorte.localizedCaseInsensitiveCompare($1.0.sorte) == .orderedAscending }
-            return eintraege.isEmpty ? nil : (loc, eintraege)
+            if !eintraege.isEmpty {
+                result.append(Gruppe(id: loc.persistentModelID.hashValue.description,
+                                     titel: loc.name, location: loc, eintraege: eintraege))
+            }
         }
+
+        if selectedLocation == nil {
+            let ohne: [(Product, Int)] = products
+                .filter { $0.gesamtflaschen == 0 && matches($0, applyLocation: false) }
+                .map { ($0, 0) }
+                .sorted { $0.0.sorte.localizedCaseInsensitiveCompare($1.0.sorte) == .orderedAscending }
+            if !ohne.isEmpty {
+                result.append(Gruppe(id: "ohne-lagerort", titel: "Ohne Lagerort", location: nil, eintraege: ohne))
+            }
+        }
+
+        return result
     }
 
-    private var gesamtGruppiert: Int {
+    private var gesamtAnzahl: Int {
         gruppen.reduce(0) { sum, gruppe in
-            sum + gruppe.1.reduce(0) { $0 + $1.1.gesamtflaschen }
+            sum + gruppe.eintraege.reduce(0) { $0 + $1.1 }
+        }
+    }
+}
+
+// MARK: - Filter-Sheet (ein-/ausklappbare Kategorien)
+
+/// Filter mit ein- und ausklappbaren Kategorien (Farbe, Art, alkoholfrei,
+/// Favoriten, Lagerort).
+struct FilterSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @Binding var selectedFarbe: WineColor?
+    @Binding var selectedArt: String?
+    @Binding var nurAlkoholfrei: Bool
+    @Binding var nurFavoriten: Bool
+    @Binding var selectedLocation: Location?
+
+    let arten: [String]
+    let locations: [Location]
+
+    @State private var expandFarbe = false
+    @State private var expandArt = false
+    @State private var expandStatus = false
+    @State private var expandLagerort = false
+
+    private var filterAktiv: Bool {
+        selectedFarbe != nil || selectedArt != nil || nurAlkoholfrei || nurFavoriten || selectedLocation != nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DisclosureGroup(isExpanded: $expandFarbe) {
+                    auswahlZeile(titel: "Alle Farben", aktiv: selectedFarbe == nil) { selectedFarbe = nil }
+                    ForEach(WineColor.allCases) { f in
+                        auswahlZeile(titel: f.rawValue, aktiv: selectedFarbe == f) {
+                            selectedFarbe = (selectedFarbe == f) ? nil : f
+                        }
+                    }
+                } label: {
+                    kategorieLabel("Farbe", wert: selectedFarbe?.rawValue)
+                }
+
+                DisclosureGroup(isExpanded: $expandArt) {
+                    auswahlZeile(titel: "Alle Arten", aktiv: selectedArt == nil) { selectedArt = nil }
+                    ForEach(arten, id: \.self) { a in
+                        auswahlZeile(titel: a, aktiv: selectedArt == a) {
+                            selectedArt = (selectedArt == a) ? nil : a
+                        }
+                    }
+                } label: {
+                    kategorieLabel("Art", wert: selectedArt)
+                }
+
+                DisclosureGroup(isExpanded: $expandStatus) {
+                    Toggle("Nur alkoholfrei", isOn: $nurAlkoholfrei)
+                    Toggle("Nur Favoriten", isOn: $nurFavoriten)
+                } label: {
+                    kategorieLabel("Status", wert: statusWert)
+                }
+
+                if !locations.isEmpty {
+                    DisclosureGroup(isExpanded: $expandLagerort) {
+                        auswahlZeile(titel: "Alle Lagerorte", aktiv: selectedLocation == nil) { selectedLocation = nil }
+                        ForEach(locations) { loc in
+                            auswahlZeile(titel: loc.name, aktiv: selectedLocation?.persistentModelID == loc.persistentModelID) {
+                                selectedLocation = (selectedLocation?.persistentModelID == loc.persistentModelID) ? nil : loc
+                            }
+                        }
+                    } label: {
+                        kategorieLabel("Lagerort", wert: selectedLocation?.name)
+                    }
+                }
+
+                if filterAktiv {
+                    Section {
+                        Button(role: .destructive) { zuruecksetzen() } label: {
+                            Label("Filter zurücksetzen", systemImage: "xmark.circle")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Filter")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { dismiss() }
+                }
+            }
         }
     }
 
-    private func delete(_ offsets: IndexSet) {
-        let liste = filteredProducts
-        for index in offsets where index < liste.count {
-            context.delete(liste[index])
+    private var statusWert: String? {
+        var teile: [String] = []
+        if nurAlkoholfrei { teile.append("alkoholfrei") }
+        if nurFavoriten { teile.append("Favoriten") }
+        return teile.isEmpty ? nil : teile.joined(separator: ", ")
+    }
+
+    private func kategorieLabel(_ titel: String, wert: String?) -> some View {
+        HStack {
+            Text(titel)
+            Spacer()
+            if let wert {
+                Text(wert).foregroundStyle(.secondary)
+            }
         }
+    }
+
+    private func auswahlZeile(titel: String, aktiv: Bool, aktion: @escaping () -> Void) -> some View {
+        Button(action: aktion) {
+            HStack {
+                Text(titel).foregroundStyle(.primary)
+                Spacer()
+                if aktiv { Image(systemName: "checkmark").foregroundStyle(.tint) }
+            }
+        }
+    }
+
+    private func zuruecksetzen() {
+        selectedFarbe = nil
+        selectedArt = nil
+        nurAlkoholfrei = false
+        nurFavoriten = false
+        selectedLocation = nil
     }
 }
 
@@ -233,9 +319,16 @@ struct ProductRow: View {
         HStack(spacing: 12) {
             thumbnail
             VStack(alignment: .leading, spacing: 2) {
-                Text(product.sorte.isEmpty ? "Unbenannt" : product.sorte)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+                HStack(spacing: 4) {
+                    if product.favorit {
+                        Image(systemName: "star.fill")
+                            .font(.caption)
+                            .foregroundStyle(.yellow)
+                    }
+                    Text(product.sorte.isEmpty ? "Unbenannt" : product.sorte)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                }
                 Text(product.winzer.isEmpty ? "Unbekannter Winzer" : product.winzer)
                     .font(.caption)
                     .foregroundStyle(.secondary)

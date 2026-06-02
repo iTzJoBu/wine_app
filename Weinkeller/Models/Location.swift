@@ -27,7 +27,7 @@ final class Location {
 
     /// Aktuell hier eingelagerte Flaschen.
     var belegteFlaschen: Int {
-        stockEntries.reduce(0) { $0 + $1.gesamtflaschen }
+        stockEntries.reduce(0) { $0 + $1.anzahl }
     }
 
     /// Noch freie Plätze (nil = unbegrenzt), nie negativ.

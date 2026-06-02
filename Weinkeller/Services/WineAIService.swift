@@ -7,11 +7,13 @@ struct WineAISuggestion: Decodable {
     var jahrgang: String?
     var farbe: String?
     var art: String?
+    var verschluss: String?
 }
 
 /// Ergebnis eines KI-Aufrufs inkl. (optionalem) Tokenverbrauch für die Kostenschätzung.
 struct WineAIResult {
     var suggestion: WineAISuggestion
+    var provider: AIProvider
     var inputTokens: Int?
     var outputTokens: Int?
 }
@@ -30,34 +32,65 @@ enum WineAIError: LocalizedError {
     }
 }
 
-/// Optionale KI-Erkennung. Unterstützt Google Gemini (kostenlos) und Anthropic
-/// Claude. Der Anbieter und die Schlüssel werden in den Einstellungen gewählt.
+/// Optionale KI-Erkennung. Primär wird Google Gemini (gemini-3.1-flash-lite)
+/// verwendet; bei Fehlern/Kontingenten wird automatisch auf den jeweils anderen
+/// Anbieter mit hinterlegtem Schlüssel zurückgefallen.
 enum WineAIService {
+
+    /// Gemini-Modelle in Reihenfolge: erst 3.1-flash-lite, dann dessen Preview.
+    private static let geminiModelle = ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"]
 
     /// Gemeinsamer Prompt für beide Anbieter.
     private static let prompt = """
     Analysiere das Wein- oder Sekt-Etikett auf dem Foto. Antworte AUSSCHLIESSLICH mit einem \
     JSON-Objekt, ohne weiteren Text, genau in diesem Format:
-    {"winzer": "", "sorte": "", "jahrgang": "", "farbe": "rot|weiß|rosé", "art": "Wein|Sekt|Champagner|Prosecco|…"}
-    Lass einzelne Felder leer, wenn du sie nicht sicher erkennen kannst.
+    {"sorte": "", "winzer": "", "jahrgang": "", "farbe": "rot|weiß|rosé|", "art": "Wein|Sekt|Champagner|Prosecco|…", "verschluss": "korken|schraubverschluss|kronkorken|"}
+    Regeln: "farbe" nur aus {rot, weiß, rosé} oder leer. "verschluss" nur aus \
+    {korken, schraubverschluss, kronkorken} oder leer. Lass einzelne Felder leer, wenn du sie \
+    nicht sicher erkennen kannst.
     """
 
-    /// Fragt den aktuell eingestellten Anbieter.
+    /// Versucht die Erkennung. Reihenfolge: bevorzugter Anbieter zuerst, dann der
+    /// andere als Fallback. Übersprungen wird, wofür kein Schlüssel hinterlegt ist.
     static func identify(image: UIImage) async throws -> WineAIResult {
-        let providerRaw = UserDefaults.standard.string(forKey: SettingsKey.aiProvider) ?? AIProvider.gemini.rawValue
-        let provider = AIProvider(rawValue: providerRaw) ?? .gemini
-
         guard let jpeg = resized(image).jpegData(compressionQuality: 0.6) else {
             throw WineAIError.requestFailed("Bild konnte nicht verarbeitet werden.")
         }
         let base64 = jpeg.base64EncodedString()
 
-        switch provider {
-        case .gemini:
-            return try await identifyWithGemini(base64: base64)
-        case .anthropic:
-            return try await identifyWithAnthropic(base64: base64)
+        let providerRaw = UserDefaults.standard.string(forKey: SettingsKey.aiProvider) ?? AIProvider.gemini.rawValue
+        let bevorzugt = AIProvider(rawValue: providerRaw) ?? .gemini
+        // Bevorzugten Anbieter zuerst, danach den jeweils anderen als Fallback.
+        let reihenfolge: [AIProvider] = bevorzugt == .gemini ? [.gemini, .anthropic] : [.anthropic, .gemini]
+
+        var letzterFehler: Error?
+        var hatteSchluessel = false
+        for provider in reihenfolge {
+            guard hatSchluessel(provider) else { continue }
+            hatteSchluessel = true
+            do {
+                switch provider {
+                case .gemini: return try await identifyWithGemini(base64: base64)
+                case .anthropic: return try await identifyWithAnthropic(base64: base64)
+                }
+            } catch {
+                // Anbieter nicht verfügbar / Kontingent erschöpft → nächsten versuchen.
+                letzterFehler = error
+                continue
+            }
         }
+
+        if !hatteSchluessel { throw WineAIError.noAPIKey }
+        throw letzterFehler ?? WineAIError.requestFailed("Kein KI-Anbieter verfügbar.")
+    }
+
+    private static func hatSchluessel(_ provider: AIProvider) -> Bool {
+        let key: String
+        switch provider {
+        case .gemini: key = UserDefaults.standard.string(forKey: SettingsKey.geminiAPIKey) ?? ""
+        case .anthropic: key = UserDefaults.standard.string(forKey: SettingsKey.anthropicAPIKey) ?? ""
+        }
+        return !key.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     // MARK: - Google Gemini
@@ -65,13 +98,6 @@ enum WineAIService {
     private static func identifyWithGemini(base64: String) async throws -> WineAIResult {
         let key = UserDefaults.standard.string(forKey: SettingsKey.geminiAPIKey) ?? ""
         guard !key.isEmpty else { throw WineAIError.noAPIKey }
-
-        // Falls "gemini-2.5-flash" Probleme macht, "gemini-flash-latest" verwenden.
-        let model = "gemini-2.5-flash"
-        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent"
-        guard let url = URL(string: urlString) else {
-            throw WineAIError.requestFailed("Ungültige URL.")
-        }
 
         let payload: [String: Any] = [
             "contents": [[
@@ -81,29 +107,49 @@ enum WineAIService {
                 ]
             ]]
         ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        var letzterFehler: Error?
+        // Modell-Fallback: erst 3.1-flash-lite, dann dessen Preview.
+        for modell in geminiModelle {
+            let urlString = "https://generativelanguage.googleapis.com/v1beta/models/\(modell):generateContent"
+            guard let url = URL(string: urlString) else { continue }
 
-        let data = try await send(request)
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            request.httpBody = body
 
-        // Antwort: candidates[0].content.parts[0].text
-        guard
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let candidates = json["candidates"] as? [[String: Any]],
-            let content = candidates.first?["content"] as? [String: Any],
-            let parts = content["parts"] as? [[String: Any]],
-            let text = parts.compactMap({ $0["text"] as? String }).first
-        else {
-            throw WineAIError.requestFailed("Antwort von Gemini konnte nicht gelesen werden.")
+            do {
+                let data = try await send(request)
+                guard
+                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    let candidates = json["candidates"] as? [[String: Any]],
+                    let content = candidates.first?["content"] as? [String: Any],
+                    let parts = content["parts"] as? [[String: Any]],
+                    let text = parts.compactMap({ $0["text"] as? String }).first
+                else {
+                    throw WineAIError.requestFailed("Antwort von Gemini konnte nicht gelesen werden.")
+                }
+
+                let suggestion = try parseSuggestion(from: text)
+
+                // Tokenverbrauch aus usageMetadata (promptTokenCount/candidatesTokenCount).
+                var inputTokens: Int?
+                var outputTokens: Int?
+                if let usage = json["usageMetadata"] as? [String: Any] {
+                    inputTokens = usage["promptTokenCount"] as? Int
+                    outputTokens = usage["candidatesTokenCount"] as? Int
+                }
+
+                return WineAIResult(suggestion: suggestion, provider: .gemini, inputTokens: inputTokens, outputTokens: outputTokens)
+            } catch {
+                letzterFehler = error
+                continue
+            }
         }
-
-        let suggestion = try parseSuggestion(from: text)
-        // Gemini-Kosten werden nicht erfasst (Anbieter ist kostenlos).
-        return WineAIResult(suggestion: suggestion, inputTokens: nil, outputTokens: nil)
+        throw letzterFehler ?? WineAIError.requestFailed("Gemini nicht verfügbar.")
     }
 
     // MARK: - Anthropic Claude
@@ -140,7 +186,6 @@ enum WineAIService {
 
         let data = try await send(request)
 
-        // Antwort: content[0].text, Tokenverbrauch in usage.input_tokens/output_tokens
         guard
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let content = json["content"] as? [[String: Any]],
@@ -158,7 +203,7 @@ enum WineAIService {
             outputTokens = usage["output_tokens"] as? Int
         }
 
-        return WineAIResult(suggestion: suggestion, inputTokens: inputTokens, outputTokens: outputTokens)
+        return WineAIResult(suggestion: suggestion, provider: .anthropic, inputTokens: inputTokens, outputTokens: outputTokens)
     }
 
     // MARK: - Hilfsfunktionen
