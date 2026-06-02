@@ -6,11 +6,14 @@ struct LabelResult {
     var fullText: String = ""
     var lines: [String] = []
     var jahrgang: String = ""
+    /// Erster erkannter Barcode (für die schnelle EAN-Vorbelegung).
     var ean: String = ""
+    /// Alle erkannten Barcodes (für die Wiedererkennung / Karton-Codes).
+    var barcodes: [String] = []
 }
 
 /// Liest – komplett offline und kostenlos – mit Apples Vision-Technik den Text
-/// und einen eventuellen Barcode (EAN) vom Etiketten-Foto.
+/// und eventuelle Barcodes (EAN) vom Etiketten-Foto.
 enum LabelRecognizer {
 
     static func recognize(_ image: UIImage) async -> LabelResult {
@@ -23,7 +26,7 @@ enum LabelRecognizer {
         textRequest.usesLanguageCorrection = true
         textRequest.recognitionLanguages = ["de-DE", "fr-FR", "it-IT", "en-US"]
 
-        // Barcode-Erkennung (EAN)
+        // Barcode-Erkennung (EAN/UPC)
         let barcodeRequest = VNDetectBarcodesRequest()
         barcodeRequest.symbologies = [.ean13, .ean8, .upce]
 
@@ -46,9 +49,10 @@ enum LabelRecognizer {
             result.jahrgang = extractYear(from: lines) ?? ""
         }
 
-        if let codes = barcodeRequest.results,
-           let payload = codes.compactMap({ $0.payloadStringValue }).first {
-            result.ean = payload
+        if let codes = barcodeRequest.results {
+            let payloads = codes.compactMap { $0.payloadStringValue }
+            result.barcodes = Array(Set(payloads)) // Dubletten entfernen
+            result.ean = payloads.first ?? ""
         }
 
         return result
