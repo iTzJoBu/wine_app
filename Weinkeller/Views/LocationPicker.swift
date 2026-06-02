@@ -60,7 +60,7 @@ struct LocationEditSheet: View {
     var onSaved: (Location) -> Void = { _ in }
 
     @State private var name = ""
-    @State private var kapazitaet = 24
+    @State private var kapazitaetText = ""
     @State private var notiz = ""
 
     private var istNeu: Bool { location == nil }
@@ -68,11 +68,14 @@ struct LocationEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Lagerort") {
+                Section {
                     TextField("Name (z. B. Keller, Garage)", text: $name)
-                    Stepper(value: $kapazitaet, in: 1...100000) {
-                        Text("Kapazität: \(kapazitaet) Flaschen")
-                    }
+                    TextField("Kapazität (optional)", text: $kapazitaetText)
+                        .keyboardType(.numberPad)
+                } header: {
+                    Text("Lagerort")
+                } footer: {
+                    Text("Die Kapazität (Anzahl Flaschen, die hineinpassen) ist optional. Ohne Angabe gilt der Lagerort als unbegrenzt.")
                 }
                 Section("Notiz (optional)") {
                     TextField("Notiz", text: $notiz, axis: .vertical)
@@ -92,7 +95,7 @@ struct LocationEditSheet: View {
             .onAppear {
                 if let location {
                     name = location.name
-                    kapazitaet = location.kapazitaet
+                    kapazitaetText = location.kapazitaet.map(String.init) ?? ""
                     notiz = location.notiz ?? ""
                 }
             }
@@ -102,6 +105,9 @@ struct LocationEditSheet: View {
     private func save() {
         let sauberName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let sauberNotiz = notiz.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Nur Ziffern berücksichtigen; leer => keine Kapazität (unbegrenzt).
+        let ziffern = kapazitaetText.filter(\.isNumber)
+        let kapazitaet: Int? = ziffern.isEmpty ? nil : Int(ziffern)
         let ziel: Location
         if let location {
             location.name = sauberName

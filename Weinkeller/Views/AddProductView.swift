@@ -2,10 +2,10 @@ import SwiftUI
 import SwiftData
 
 /// Ablauf zum Hinzufügen eines Getränks:
-/// 1. Foto vom Etikett (= Anzeigebild) aufnehmen
-/// 2. App liest offline Text + Barcode und füllt Felder vor
-/// 3. Optional „Mit KI nachschlagen"
-/// 4. Lagerort, Einheit (Flasche/Karton) und Menge wählen
+/// 1. Vorderseite fotografieren (= Anzeigebild), App liest offline Text + Barcode.
+/// 2. Rückseite fotografieren (nur für die KI, wird danach verworfen).
+/// 3. Optional „Mit KI nachschlagen" (erst möglich, wenn beide Fotos vorliegen).
+/// 4. Lagerort, Einheit (Flasche/Karton) und Menge wählen.
 /// 5. Speichern – vorher wird auf mögliche Duplikate geprüft.
 struct AddProductView: View {
     @Environment(\.modelContext) private var context
@@ -13,11 +13,14 @@ struct AddProductView: View {
 
     @Query private var products: [Product]
     @AppStorage(SettingsKey.customArten) private var customArten = ""
+    @AppStorage(SettingsKey.deaktivierteArten) private var deaktivierteArten = ""
 
     // Bilder
-    @State private var anzeigeBild: UIImage?
-    @State private var showCameraAnzeige = false
-    @State private var showCameraAnalyse = false
+    @State private var anzeigeBild: UIImage?          // Vorderseite, wird gespeichert
+    @State private var rueckseiteBild: UIImage?       // Rückseite, nur für KI, wird verworfen
+    @State private var showCameraVorderseite = false
+    @State private var showCameraRueckseite = false
+    @State private var zeigeRueckseiteHinweis = false
 
     // Erkennungszustand
     @State private var isRecognizing = false
@@ -32,7 +35,6 @@ struct AddProductView: View {
     @State private var art = "Wein"
     @State private var alkoholfrei = false
     @State private var ean = ""
-    @State private var kartonEAN = ""
     @State private var flaschenProKarton = 6
 
     // versteckte Erkennungsdaten
@@ -48,14 +50,17 @@ struct AddProductView: View {
     @State private var duplikat: Product?
     @State private var zeigeDuplikatDialog = false
 
-    private var arten: [String] { ArtStore.all(custom: customArten) }
+    private var arten: [String] { ArtStore.effective(custom: customArten, deaktiviert: deaktivierteArten) }
+
+    /// KI ist erst nutzbar, wenn Vorder- UND Rückseite fotografiert wurden.
+    private var kiBereit: Bool { anzeigeBild != nil && rueckseiteBild != nil }
 
     var body: some View {
         NavigationStack {
             Form {
                 fotoSection
                 produktSection
-                kartonSection
+                eanSection
                 lagerSection
                 kiSection
                 if !erkannterText.isEmpty {
@@ -77,19 +82,29 @@ struct AddProductView: View {
                         .disabled(!canSave)
                 }
             }
-            .fullScreenCover(isPresented: $showCameraAnzeige) {
+            .onAppear {
+                if !arten.contains(art) { art = arten.first ?? "Wein" }
+            }
+            .fullScreenCover(isPresented: $showCameraVorderseite) {
                 CameraPicker { captured in
                     anzeigeBild = captured
                     Task { await recognize(captured) }
                 }
                 .ignoresSafeArea()
             }
-            .fullScreenCover(isPresented: $showCameraAnalyse) {
+            .fullScreenCover(isPresented: $showCameraRueckseite) {
                 CameraPicker { captured in
-                    // Analyse-Foto: NUR zur Datengewinnung, wird nicht gespeichert.
-                    Task { await recognize(captured); await runAI(on: captured) }
+                    // Rückseite: nur zur Datengewinnung, wird NICHT gespeichert.
+                    rueckseiteBild = captured
+                    Task { await recognize(captured) }
                 }
                 .ignoresSafeArea()
+            }
+            .alert("Rückseite fotografieren", isPresented: $zeigeRueckseiteHinweis) {
+                Button("Kamera öffnen") { showCameraRueckseite = true }
+                Button("Abbrechen", role: .cancel) {}
+            } message: {
+                Text("Bitte fotografiere jetzt die RÜCKSEITE des Etiketts. Dort stehen meist die Details, die die KI auswertet. Dieses Foto wird nur analysiert und danach wieder verworfen.")
             }
             .confirmationDialog(
                 "Dieses Getränk existiert evtl. schon",
@@ -110,25 +125,37 @@ struct AddProductView: View {
     // MARK: - Sections
 
     private var fotoSection: some View {
-        Section("Anzeigebild (Etikett)") {
+        Section {
+            // Vorderseite = Anzeigebild
             if let anzeigeBild {
                 Image(uiImage: anzeigeBild)
                     .resizable().scaledToFit()
                     .frame(maxWidth: .infinity).frame(maxHeight: 220)
-                Button { showCameraAnzeige = true } label: {
-                    Label("Anzeigebild ersetzen", systemImage: "camera")
+                Button { showCameraVorderseite = true } label: {
+                    Label("Vorderseite ersetzen", systemImage: "camera")
                 }
             } else {
-                Button { showCameraAnzeige = true } label: {
-                    Label("Foto vom Etikett aufnehmen", systemImage: "camera.fill")
+                Button { showCameraVorderseite = true } label: {
+                    Label("Vorderseite fotografieren (Anzeigebild)", systemImage: "camera.fill")
                 }
             }
-            Button { showCameraAnalyse = true } label: {
-                Label("Analyse-Foto (wird nach Auswertung verworfen)", systemImage: "doc.viewfinder")
+
+            // Rückseite = nur für die KI
+            Button { zeigeRueckseiteHinweis = true } label: {
+                if rueckseiteBild == nil {
+                    Label("Rückseite fotografieren (für KI)", systemImage: "doc.viewfinder")
+                } else {
+                    Label("Rückseite aufgenommen ✓ – neu aufnehmen", systemImage: "checkmark.circle")
+                }
             }
+
             if isRecognizing {
                 HStack { ProgressView(); Text("Etikett wird gelesen …").foregroundStyle(.secondary) }
             }
+        } header: {
+            Text("Fotos")
+        } footer: {
+            Text("Die Vorderseite wird als Anzeigebild gespeichert. Die Rückseite dient nur der KI-Auswertung und wird danach verworfen.")
         }
     }
 
@@ -148,19 +175,15 @@ struct AddProductView: View {
         }
     }
 
-    private var kartonSection: some View {
+    private var eanSection: some View {
         Section {
             TextField("EAN / Barcode (Einzelflasche)", text: $ean)
-                .keyboardType(.numbersAndPunctuation)
-            TextField("Karton-Barcode (optional)", text: $kartonEAN)
                 .keyboardType(.numbersAndPunctuation)
             Stepper(value: $flaschenProKarton, in: 1...100) {
                 Text("Flaschen pro Karton: \(flaschenProKarton)")
             }
         } header: {
-            Text("Barcodes & Karton")
-        } footer: {
-            Text("Wird der Karton-Barcode später gescannt, wird automatisch ein ganzer Karton (\(flaschenProKarton) Flaschen) gebucht.")
+            Text("Barcode & Karton")
         }
     }
 
@@ -184,21 +207,25 @@ struct AddProductView: View {
     private var kiSection: some View {
         Section {
             Button {
-                Task { if let img = anzeigeBild { await runAI(on: img) } }
+                Task { await runAI() }
             } label: {
                 if aiRunning {
-                    HStack { ProgressView(); Text("KI analysiert das Etikett …") }
+                    HStack { ProgressView(); Text("KI analysiert die Rückseite …") }
                 } else {
                     Label("Mit KI nachschlagen", systemImage: "sparkles")
                 }
             }
-            .disabled(anzeigeBild == nil || aiRunning)
+            .disabled(!kiBereit || aiRunning)
 
             if let aiError {
                 Text(aiError).font(.footnote).foregroundStyle(.red)
             }
         } footer: {
-            Text("Optional: Sendet das Foto an den in den Einstellungen gewählten KI-Anbieter, um Winzer, Sorte, Jahrgang, Farbe und Art zu erkennen.")
+            if kiBereit {
+                Text("Sendet die RÜCKSEITE an den in den Einstellungen gewählten KI-Anbieter, um Winzer, Sorte, Jahrgang, Farbe und Art zu erkennen.")
+            } else {
+                Text("Erst verfügbar, wenn Vorder- und Rückseite fotografiert wurden. Es wird ausschließlich die Rückseite an die KI gesendet.")
+            }
         }
     }
 
@@ -229,12 +256,13 @@ struct AddProductView: View {
         }
     }
 
-    /// Fragt optional die KI.
-    private func runAI(on image: UIImage) async {
+    /// Fragt die KI – ausschließlich mit der Rückseite.
+    private func runAI() async {
+        guard let bild = rueckseiteBild else { return }
         aiRunning = true
         aiError = nil
         do {
-            let result = try await WineAIService.identify(image: image)
+            let result = try await WineAIService.identify(image: bild)
             let s = result.suggestion
             if let v = s.winzer, !v.isEmpty { winzer = v }
             if let v = s.sorte, !v.isEmpty { sorte = v }
@@ -300,7 +328,6 @@ struct AddProductView: View {
             art: art,
             alkoholfrei: alkoholfrei,
             ean: ean.trimmingCharacters(in: .whitespacesAndNewlines),
-            kartonEAN: kartonEAN.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : kartonEAN.trimmingCharacters(in: .whitespacesAndNewlines),
             flaschenProKarton: flaschenProKarton,
             anzeigebildData: anzeigeBild?.jpegData(compressionQuality: 0.7),
             erkannterText: erkannterText,

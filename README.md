@@ -30,25 +30,32 @@ bleibt **lokal auf deinem iPhone**.
   Produkte.*
 - ✨ **Optionale KI-Erkennung**, umschaltbar zwischen **Google Gemini
   (kostenlos)** und **Anthropic Claude** – füllt Winzer, Sorte, Jahrgang, Farbe
-  und Art automatisch aus.
+  und Art automatisch aus. Verfügbar, sobald **2 Fotos** (Vorder- und Rückseite)
+  vorliegen; gesendet wird **ausschließlich die Rückseite** (dort stehen meist
+  die Details). Vor der Aufnahme wird ausdrücklich darauf hingewiesen.
 - 🎨 **Zwei getrennte Kategorien:** **Farbe** (rot/weiß/rosé) und **Art**
-  (Sekt/Champagner/Prosecco/Wein …). Die Art-Liste ist in den Einstellungen
-  **erweiterbar** (z. B. Crémant, Cava). Dazu ein Schalter **„alkoholfrei"**.
+  (Sekt/Champagner/Prosecco/Wein …). In der Übersicht ist die Art-Markierung in
+  der **jeweiligen Weinfarbe** hinterlegt. Arten lassen sich in den Einstellungen
+  über einen Button **hinzufügen**, eigene wieder löschen und eingebaute per
+  Schalter **deaktivieren**. Dazu ein Schalter **„alkoholfrei"**.
 - 📦 **Flaschen & Kartons kombiniert:** Beim Buchen Einheit wählen (Flasche oder
-  Karton), „Flaschen pro Karton" pro Produkt einstellbar (Standard 6), optionaler
-  **Karton-Barcode**.
+  Karton), „Flaschen pro Karton" pro Produkt einstellbar (Standard 6).
 - 📍 **Mehrere Lagerorte pro Produkt:** Ein Produkt kann an mehreren Orten liegen.
-  Lagerorte mit **Kapazität** anlegen, Belegung sehen („12 / 24"), Überbelegung
-  wird **rot** hervorgehoben.
+  Lagerorte mit **optionaler Kapazität** anlegen (per Ziffernblock eingebbar),
+  Belegung sehen („12 / 24" bzw. nur die Anzahl ohne Limit), Überbelegung wird
+  **rot** hervorgehoben.
 - 🔁 **Verschieben:** Menge + Einheit von einem Lagerort zu einem anderen umbuchen.
 - 🔍 **Übersicht mit Filtern** (Farbe, Art, alkoholfrei, Lagerort – kombinierbar),
   **Suche**, Umschalter **„Nach Lagerort gruppieren"** und **Gesamtsummen**.
+- 💾 **Export & Import:** In den Einstellungen den kompletten Bestand als
+  JSON-Datei (inkl. Bilder) **sichern** und wieder **importieren** (Import führt
+  zusammen und erkennt Duplikate).
 - 💶 **Claude-Kostenschätzung:** Bei Anbieter „Anthropic" wird der Tokenverbrauch
   ausgelesen und lokal in eine grobe USD-Schätzung umgerechnet (gesamt & letzte
   28 Tage).
 - 💾 Alles wird **lokal auf dem iPhone** gespeichert (SwiftData), keine Cloud,
-  kein Konto nötig. **Analyse-Fotos**, die nur zur Datengewinnung dienen, werden
-  nach der Auswertung wieder **verworfen** – nur die gewonnenen Daten bleiben.
+  kein Konto nötig. Die **Rückseiten-Fotos** für die KI werden nur ausgewertet
+  und danach wieder **verworfen** – nur die gewonnenen Daten bleiben.
 
 ---
 
@@ -110,11 +117,12 @@ Beim ersten Start zeigt das iPhone „Nicht vertrauter Entwickler":
 ### Zuerst: Lagerorte anlegen
 Damit du Bestand einlagern kannst, brauchst du mindestens einen Lagerort.
 - **⚙️ Einstellungen → Lagerorte → Lagerorte verwalten → +**
-- Name (z. B. „Keller") und **Kapazität** (Anzahl Flaschen, die hineinpassen)
-  eingeben.
-- Du siehst pro Lagerort die Belegung („12 / 24 belegt") und wie viel noch frei
-  ist; **Überbelegung** wird rot markiert. Vor dem Löschen eines belegten
-  Lagerorts warnt die App.
+- Name (z. B. „Keller") eingeben. Die **Kapazität** (Anzahl Flaschen, die
+  hineinpassen) ist **optional** und lässt sich bequem über den **Ziffernblock**
+  eintippen. Ohne Angabe gilt der Lagerort als unbegrenzt.
+- Du siehst pro Lagerort die Belegung („12 / 24 belegt" bzw. nur die Anzahl ohne
+  Limit) und wie viel noch frei ist; **Überbelegung** wird rot markiert. Vor dem
+  Löschen eines belegten Lagerorts warnt die App.
 
 > Tipp: Du kannst Lagerorte auch **direkt beim Buchen** anlegen – im
 > Lagerort-Dropdown ist der oberste Eintrag immer **„➕ Neuen Lagerort
@@ -122,15 +130,17 @@ Damit du Bestand einlagern kannst, brauchst du mindestens einen Lagerort.
 
 ### Ein Getränk hinzufügen
 1. **+** oben rechts antippen.
-2. **„Foto vom Etikett aufnehmen"** → das wird das **Anzeigebild**. Die App liest
+2. **„Vorderseite fotografieren"** → das wird das **Anzeigebild**. Die App liest
    automatisch Text & Barcodes.
-   - Alternativ **„Analyse-Foto"**: ein zusätzliches Foto nur zur Daten-/KI-
-     Auswertung, das danach **verworfen** wird.
-3. Optional **„Mit KI nachschlagen"** (Anbieter & Schlüssel siehe unten).
-4. Felder prüfen: **Sorte, Winzer, Jahrgang, Farbe, Art, alkoholfrei**, EAN,
-   optional **Karton-Barcode** und **Flaschen pro Karton**.
-5. **Einlagern:** Lagerort wählen, **Einheit** (Flasche/Karton) und **Menge**.
-6. **„Speichern"**. Erkennt die App ein mögliches Duplikat, fragt sie nach:
+3. **„Rückseite fotografieren"** → vor der Aufnahme weist die App ausdrücklich
+   darauf hin, dass die **Rückseite** gemeint ist. Dieses Foto dient nur der
+   KI-Auswertung und wird danach **verworfen**.
+4. **„Mit KI nachschlagen"** (optional) ist aktiv, sobald beide Fotos vorliegen –
+   gesendet wird ausschließlich die Rückseite (Anbieter & Schlüssel siehe unten).
+5. Felder prüfen: **Sorte, Winzer, Jahrgang, Farbe, Art, alkoholfrei**, EAN und
+   **Flaschen pro Karton**.
+6. **Einlagern:** Lagerort wählen, **Einheit** (Flasche/Karton) und **Menge**.
+7. **„Speichern"**. Erkennt die App ein mögliches Duplikat, fragt sie nach:
    **Zusammenführen** (Bestand zum bestehenden Produkt hinzubuchen) oder **als
    neues Produkt anlegen**.
 
@@ -176,6 +186,24 @@ passenden Schlüssel:
 
 Der Schlüssel wird **nur lokal** auf deinem iPhone gespeichert und ausschließlich
 beim Antippen von „Mit KI nachschlagen" an den gewählten Anbieter gesendet.
+Gesendet wird dabei **nur das Rückseiten-Foto**.
+
+## Arten verwalten (Einstellungen)
+
+Unter **⚙️ Einstellungen → Arten**:
+- **Eingebaute Arten** (Wein, Sekt, Champagner, Prosecco) lassen sich per
+  **Schalter deaktivieren** – sie verschwinden dann aus allen Auswahllisten.
+- Über **„Art hinzufügen"** legst du eigene Arten an (z. B. Crémant, Cava); diese
+  kannst du per Wischen wieder löschen.
+
+## Export & Import (Einstellungen)
+
+Unter **⚙️ Einstellungen → Daten sichern**:
+- **Exportieren** erzeugt eine **JSON-Datei** mit allen Produkten, Lagerorten,
+  Beständen und Anzeigebildern, die du z. B. in „Dateien", iCloud oder per
+  AirDrop sichern kannst.
+- **Importieren** liest eine solche Datei wieder ein und **führt sie mit dem
+  vorhandenen Bestand zusammen** (Duplikate werden erkannt, Bestände addiert).
 
 > **Kosten-Hinweis:** Die angezeigten Claude-Kosten sind eine **Schätzung** auf
 > Basis der verbrauchten Token und der im Code hinterlegten Preise für
@@ -226,7 +254,7 @@ Weinkeller/
 │   ├── ProductListView.swift       # Übersicht: Suche, Filter, Gruppierung, Summen
 │   ├── AddProductView.swift        # Hinzufügen inkl. Duplikat-Erkennung
 │   ├── ProductDetailView.swift     # Bearbeiten + Bestand je Lagerort
-│   ├── SettingsView.swift          # KI-Anbieter/Schlüssel, Arten, Lagerorte, Kosten
+│   ├── SettingsView.swift          # KI, Arten, Lagerorte, Export/Import, Kosten
 │   ├── LocationsManagementView.swift # Lagerorte anlegen/bearbeiten/löschen
 │   ├── LocationPicker.swift        # Lagerort-Dropdown (+ „Neuen Lagerort erstellen")
 │   └── StockSheets.swift           # Bestand buchen & verschieben
@@ -236,8 +264,9 @@ Weinkeller/
 │   ├── WineAIService.swift         # Optionale KI (Gemini oder Anthropic)
 │   ├── ProductMatcher.swift        # Offline-Duplikaterkennung/-Wiedererkennung
 │   ├── StockService.swift          # Buchen/Verschieben von Beständen
+│   ├── BackupService.swift         # Export/Import als JSON (inkl. Bilder)
 │   └── Pricing.swift               # Token-Preise für die Claude-Kostenschätzung
-└── Assets.xcassets/                # App-Icon & Akzentfarbe
+└── Assets.xcassets/                # App-Icon & Akzentfarbe (Apple-Blau)
 ```
 
 **Datenmodell in Kürze**

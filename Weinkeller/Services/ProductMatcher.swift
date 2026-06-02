@@ -59,14 +59,10 @@ enum ProductMatcher {
     ) -> Product? {
         let alleCodes = Set(([ean] + barcodes).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
 
-        // 1. Exakter EAN-/Karton-Code-Treffer.
+        // 1. Exakter EAN-Treffer.
         if !alleCodes.isEmpty {
             for product in products {
                 if alleCodes.contains(product.ean.trimmingCharacters(in: .whitespaces)) && !product.ean.isEmpty {
-                    return product
-                }
-                if let karton = product.kartonEAN?.trimmingCharacters(in: .whitespaces),
-                   !karton.isEmpty, alleCodes.contains(karton) {
                     return product
                 }
                 // Auch früher gemerkte Barcodes berücksichtigen.

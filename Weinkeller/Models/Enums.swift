@@ -46,30 +46,33 @@ enum AIProvider: String, CaseIterable, Identifiable {
 }
 
 /// Verwaltet die Liste der verfügbaren "Arten" (Wein, Sekt, …).
-/// Die fest eingebauten Arten sind immer vorhanden; eigene Arten
-/// (z. B. Crémant, Cava) werden in den Einstellungen ergänzt und als
-/// zeilenweise Liste in den App-Einstellungen (@AppStorage) gespeichert.
+/// Es gibt fest eingebaute Arten (einzeln deaktivierbar) und eigene Arten
+/// (z. B. Crémant, Cava). Beide Listen werden als zeilenweise Strings in den
+/// App-Einstellungen (@AppStorage) gespeichert.
 enum ArtStore {
     static let builtIn = ["Wein", "Sekt", "Champagner", "Prosecco"]
 
-    /// Liefert eingebaute + eigene Arten ohne Dubletten.
-    static func all(custom raw: String) -> [String] {
-        let customList = parse(raw)
-        var result = builtIn
-        for art in customList where !result.contains(art) {
+    /// Liefert die tatsächlich auswählbaren Arten: eingebaute (ohne die
+    /// deaktivierten) gefolgt von den eigenen, ohne Dubletten. Ist die Liste
+    /// leer, wird als Sicherheitsnetz ["Wein"] zurückgegeben, damit Picker nie
+    /// ohne Auswahl dastehen.
+    static func effective(custom rawCustom: String, deaktiviert rawDeaktiviert: String) -> [String] {
+        let deaktiviert = Set(parse(rawDeaktiviert))
+        var result = builtIn.filter { !deaktiviert.contains($0) }
+        for art in parse(rawCustom) where !result.contains(art) {
             result.append(art)
         }
-        return result
+        return result.isEmpty ? ["Wein"] : result
     }
 
-    /// Zerlegt den gespeicherten Roh-String (eine Art pro Zeile) in eine Liste.
+    /// Zerlegt den gespeicherten Roh-String (ein Eintrag pro Zeile) in eine Liste.
     static func parse(_ raw: String) -> [String] {
         raw.split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
     }
 
-    /// Setzt eine Liste eigener Arten wieder zu einem Roh-String zusammen.
+    /// Setzt eine Liste wieder zu einem Roh-String zusammen.
     static func join(_ list: [String]) -> String {
         list.map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -83,4 +86,5 @@ enum SettingsKey {
     static let geminiAPIKey = "geminiAPIKey"
     static let anthropicAPIKey = "anthropicAPIKey"
     static let customArten = "customArten"
+    static let deaktivierteArten = "deaktivierteArten"
 }

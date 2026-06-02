@@ -22,10 +22,6 @@ final class Product {
 
     /// EAN-/Barcode der Einzelflasche.
     var ean: String
-    /// Optionaler EAN-/Barcode des Kartons. Wird er gescannt, wird ein ganzer
-    /// Karton gebucht. Der Code selbst trägt keine Stückzahl – die Zuordnung
-    /// "Karton-Code = N Flaschen" ergibt sich aus `flaschenProKarton`.
-    var kartonEAN: String?
     /// Anzahl Flaschen pro Karton (Standard 6).
     var flaschenProKarton: Int
 
@@ -65,7 +61,6 @@ final class Product {
         art: String = "Wein",
         alkoholfrei: Bool = false,
         ean: String = "",
-        kartonEAN: String? = nil,
         flaschenProKarton: Int = 6,
         anzeigebildData: Data? = nil,
         erkannterText: String = "",
@@ -79,7 +74,6 @@ final class Product {
         self.art = art
         self.alkoholfrei = alkoholfrei
         self.ean = ean
-        self.kartonEAN = kartonEAN
         self.flaschenProKarton = flaschenProKarton
         self.anzeigebildData = anzeigebildData
         self.erkannterText = erkannterText

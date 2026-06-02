@@ -7,15 +7,19 @@ struct ProductDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SettingsKey.customArten) private var customArten = ""
+    @AppStorage(SettingsKey.deaktivierteArten) private var deaktivierteArten = ""
 
-    @State private var showCamera = false
+    @State private var showCamera = false            // Anzeigebild ersetzen
+    @State private var showCameraRueckseite = false  // Rückseite für KI
+    @State private var zeigeRueckseiteHinweis = false
     @State private var showBook = false
     @State private var showMove = false
     @State private var aiRunning = false
     @State private var aiError: String?
 
     private var arten: [String] {
-        var liste = ArtStore.all(custom: customArten)
+        var liste = ArtStore.effective(custom: customArten, deaktiviert: deaktivierteArten)
+        // Falls das Produkt eine (z. B. deaktivierte) Art trägt, trotzdem zeigen.
         if !liste.contains(product.art), !product.art.isEmpty { liste.append(product.art) }
         return liste
     }
@@ -44,6 +48,19 @@ struct ProductDetailView: View {
                 Task { await aktualisiereErkennung(captured) }
             }
             .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showCameraRueckseite) {
+            CameraPicker { captured in
+                // Rückseite: nur für die KI, wird nicht gespeichert.
+                Task { await runAI(on: captured) }
+            }
+            .ignoresSafeArea()
+        }
+        .alert("Rückseite fotografieren", isPresented: $zeigeRueckseiteHinweis) {
+            Button("Kamera öffnen") { showCameraRueckseite = true }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text("Bitte fotografiere jetzt die RÜCKSEITE des Etiketts. Dort stehen meist die Details, die die KI auswertet. Dieses Foto wird nur analysiert und danach wieder verworfen.")
         }
         .sheet(isPresented: $showBook) { BookStockSheet(product: product) }
         .sheet(isPresented: $showMove) { MoveStockSheet(product: product) }
@@ -110,12 +127,8 @@ struct ProductDetailView: View {
     }
 
     private var kartonSection: some View {
-        Section("Barcodes & Karton") {
+        Section("Barcode & Karton") {
             LabeledField("EAN", text: $product.ean)
-            LabeledField("Karton-EAN", text: Binding(
-                get: { product.kartonEAN ?? "" },
-                set: { product.kartonEAN = $0.isEmpty ? nil : $0 }
-            ))
             Stepper(value: $product.flaschenProKarton, in: 1...100) {
                 Text("Flaschen pro Karton: \(product.flaschenProKarton)")
             }
@@ -125,20 +138,20 @@ struct ProductDetailView: View {
     private var kiSection: some View {
         Section {
             Button {
-                Task { await runAI() }
+                zeigeRueckseiteHinweis = true
             } label: {
                 if aiRunning {
-                    HStack { ProgressView(); Text("KI analysiert …") }
+                    HStack { ProgressView(); Text("KI analysiert die Rückseite …") }
                 } else {
-                    Label("Mit KI nachschlagen", systemImage: "sparkles")
+                    Label("Mit KI nachschlagen (Rückseite)", systemImage: "sparkles")
                 }
             }
-            .disabled(product.anzeigebildData == nil || aiRunning)
+            .disabled(aiRunning)
             if let aiError {
                 Text(aiError).font(.footnote).foregroundStyle(.red)
             }
         } footer: {
-            Text("Nutzt das aktuelle Anzeigebild und den in den Einstellungen gewählten KI-Anbieter.")
+            Text("Fotografiere die Rückseite des Etiketts; sie wird an den in den Einstellungen gewählten KI-Anbieter gesendet und danach verworfen.")
         }
     }
 
@@ -164,8 +177,9 @@ struct ProductDetailView: View {
         }
     }
 
-    private func runAI() async {
-        guard let data = product.anzeigebildData, let image = UIImage(data: data) else { return }
+    private func runAI(on image: UIImage) async {
+        // Erkennungsdaten aus der Rückseite ebenfalls für die Wiedererkennung übernehmen.
+        await aktualisiereErkennung(image)
         aiRunning = true
         aiError = nil
         do {

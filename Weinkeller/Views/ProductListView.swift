@@ -8,6 +8,7 @@ struct ProductListView: View {
     @Query(sort: \Product.dateAdded, order: .reverse) private var products: [Product]
     @Query(sort: \Location.dateAdded) private var locations: [Location]
     @AppStorage(SettingsKey.customArten) private var customArten = ""
+    @AppStorage(SettingsKey.deaktivierteArten) private var deaktivierteArten = ""
 
     @State private var showAdd = false
     @State private var showSettings = false
@@ -20,7 +21,7 @@ struct ProductListView: View {
     @State private var selectedLocation: Location?
     @State private var gruppieren = false
 
-    private var arten: [String] { ArtStore.all(custom: customArten) }
+    private var arten: [String] { ArtStore.effective(custom: customArten, deaktiviert: deaktivierteArten) }
 
     var body: some View {
         NavigationStack {
@@ -265,15 +266,12 @@ struct ProductRow: View {
 
     private var badges: some View {
         HStack(spacing: 6) {
-            if product.farbe != .keine {
-                HStack(spacing: 3) {
-                    Circle().fill(product.farbe.swatch).frame(width: 7, height: 7)
-                    Text(product.farbe.rawValue)
-                }
-            }
+            // Die Art ist in der jeweiligen Weinfarbe hinterlegt (rot/weiß/rosé),
+            // bei unbekannter Farbe neutral grau.
             Text(product.art)
                 .padding(.horizontal, 6).padding(.vertical, 1)
-                .background(Color.accentColor.opacity(0.15), in: Capsule())
+                .background(artHintergrund, in: Capsule())
+                .overlay(Capsule().strokeBorder(artRand, lineWidth: 0.5))
             if !product.jahrgang.isEmpty { Text(product.jahrgang) }
             if product.alkoholfrei {
                 Text("alkoholfrei")
@@ -283,5 +281,13 @@ struct ProductRow: View {
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
+    }
+
+    private var artHintergrund: Color {
+        product.farbe == .keine ? Color.secondary.opacity(0.18) : product.farbe.swatch.opacity(0.35)
+    }
+
+    private var artRand: Color {
+        product.farbe == .keine ? Color.secondary.opacity(0.25) : product.farbe.swatch.opacity(0.6)
     }
 }

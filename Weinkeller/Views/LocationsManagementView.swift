@@ -87,8 +87,12 @@ struct LocationsManagementView: View {
                     Text("überbelegt!")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.red)
+                } else if let frei = loc.freieKapazitaet {
+                    Text("\(frei) frei")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 } else {
-                    Text("\(loc.freieKapazitaet) frei")
+                    Text("ohne Limit")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
