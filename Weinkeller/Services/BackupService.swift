@@ -83,9 +83,13 @@ enum BackupService {
         return try decoder.decode(BackupData.self, from: data)
     }
 
-    /// Importiert ein Backup im Modus „Zusammenführen": vorhandene Produkte
-    /// werden per Duplikat-Erkennung abgeglichen, Bestände hinzugebucht, Neues
-    /// angelegt. Lagerorte werden über den Namen gefunden oder neu erstellt.
+    /// Importiert ein Backup im Modus „Zusammenführen". Damit kein Bestand
+    /// doppelt gezählt wird, gilt:
+    /// - Ein Produkt gilt nur dann als bereits vorhanden, wenn die EAN exakt
+    ///   übereinstimmt ODER Sorte + Winzer + Jahrgang (normalisiert) gleich sind.
+    /// - Ein Bestandseintrag wird nur gebucht, wenn nicht bereits ein identischer
+    ///   Eintrag existiert (gleicher Lagerort, gleiche Kartons + Einzelflaschen).
+    ///   So bleibt ein erneuter Import desselben Backups wirkungslos.
     static func merge(
         _ backup: BackupData,
         into context: ModelContext,
@@ -110,18 +114,8 @@ enum BackupService {
 
         var aktuelleProdukte = existingProducts
         for pdto in backup.products {
-            let match = ProductMatcher.findMatch(
-                in: aktuelleProdukte,
-                ean: pdto.ean,
-                barcodes: pdto.erkannteBarcodes,
-                winzer: pdto.winzer,
-                sorte: pdto.sorte,
-                jahrgang: pdto.jahrgang,
-                text: pdto.erkannterText
-            )
-
             let product: Product
-            if let match {
+            if let match = strictMatch(in: aktuelleProdukte, dto: pdto) {
                 product = match
             } else {
                 let neu = Product(
@@ -144,6 +138,12 @@ enum BackupService {
 
             for s in pdto.bestaende where !s.lagerort.isEmpty {
                 let loc = location(named: s.lagerort, kapazitaet: nil, notiz: nil)
+                // Identischer Eintrag schon vorhanden? Dann nicht erneut buchen.
+                if let vorhanden = StockService.entry(for: product, at: loc),
+                   vorhanden.kartons == s.kartons,
+                   vorhanden.einzelflaschen == s.einzelflaschen {
+                    continue
+                }
                 if s.kartons > 0 {
                     StockService.book(product: product, location: loc, unit: .karton, menge: s.kartons, context: context)
                 }
@@ -151,6 +151,25 @@ enum BackupService {
                     StockService.book(product: product, location: loc, unit: .flasche, menge: s.einzelflaschen, context: context)
                 }
             }
+        }
+    }
+
+    /// Strenger Produktabgleich für den Import: exakte EAN ODER gleiche
+    /// (normalisierte) Sorte + Winzer + Jahrgang. Bewusst ohne Textähnlichkeit,
+    /// damit nur wirklich identische Produkte zusammengeführt werden.
+    private static func strictMatch(in products: [Product], dto: ProductDTO) -> Product? {
+        let ean = dto.ean.trimmingCharacters(in: .whitespaces)
+        let nWinzer = ProductMatcher.normalize(dto.winzer)
+        let nSorte = ProductMatcher.normalize(dto.sorte)
+        let nJahrgang = ProductMatcher.normalize(dto.jahrgang)
+
+        return products.first { p in
+            if !ean.isEmpty, p.ean.trimmingCharacters(in: .whitespaces) == ean {
+                return true
+            }
+            return ProductMatcher.normalize(p.winzer) == nWinzer
+                && ProductMatcher.normalize(p.sorte) == nSorte
+                && ProductMatcher.normalize(p.jahrgang) == nJahrgang
         }
     }
 }

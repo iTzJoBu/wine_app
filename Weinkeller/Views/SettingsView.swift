@@ -248,7 +248,7 @@ struct SettingsView: View {
         } header: {
             Text("Daten sichern")
         } footer: {
-            Text("Export erzeugt eine JSON-Datei mit allen Produkten, Lagerorten, Beständen und Anzeigebildern. Beim Import werden die Daten mit dem vorhandenen Bestand zusammengeführt (Duplikate werden erkannt).")
+            Text("Export erzeugt eine JSON-Datei mit allen Produkten, Lagerorten, Beständen und Anzeigebildern. Beim Import werden die Daten zusammengeführt: Ein Produkt gilt nur bei gleicher EAN oder gleicher Sorte + Winzer + Jahrgang als identisch, und ein bereits vorhandener Bestand (gleicher Lagerort, gleiche Anzahl) wird nicht doppelt gebucht.")
         }
     }
 
